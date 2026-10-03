@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>双人协作做铺 · ADOFAI Coop Editor</title>
+<meta name="description" content="冰与火之舞（A Dance of Fire and Ice）双人实时协作做铺模组。两个人同时在一张谱上做铺，方块、事件、音频与图片素材自动双向同步。">
+<style>
+  /* ============================================================
+     黑板简约风：浅色白板底 + 黑笔细体字 + 大量留白 + 克制配色
+     点缀色只留两个：墨蓝（编号/链接）、红笔（提醒）
+     没有阴影，没有发光，动效只保留必要的淡入与颜色过渡
+     ============================================================ */
+  :root{
+    --paper:#fbfaf7;        /* 白板底 */
+    --paper-2:#f4f2ed;      /* 极淡的分区底 */
+    --ink:#1a1a18;          /* 黑笔 */
+    --ink-soft:#55554f;     /* 正文 */
+    --ink-faint:#8d8d85;    /* 辅助说明 */
+    --rule:#dcd9d1;         /* 手绘分割线 */
+    --hair:#e8e5de;         /* 发丝线 */
+    --accent:#2f5f8f;       /* 点缀一：墨蓝 */
+    --accent2:#b4472c;      /* 点缀二：红笔 */
+    --ease:cubic-bezier(.22,.61,.36,1);
+    --maxw:960px;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+
+  body{
+    background:var(--paper);
+    color:var(--ink-soft);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    font-weight:300;
+    line-height:1.85;
+    letter-spacing:.01em;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+    /* 极淡的点阵，给白板一点纸面质感（肉眼几乎只是"有质感"） */
+    background-image:radial-gradient(circle, rgba(26,26,24,.032) 1px, transparent 1px);
+    background-size:28px 28px;
+  }
+
+  /* ---------- 顶栏 ---------- */
+  header{
+    position:fixed;top:0;left:0;right:0;z-index:50;
+    background:rgba(251,250,247,.92);
+    border-bottom:1px solid transparent;
+    transition:border-color .3s var(--ease);
+  }
+  header.scrolled{border-bottom-color:var(--hair)}
+  nav{
+    max-width:var(--maxw);margin:0 auto;padding:18px 32px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px;
+  }
+  .brand{display:flex;align-items:center;gap:9px;font-weight:400;color:var(--ink);font-size:15px}
+  .dot{width:7px;height:7px;background:var(--accent);border-radius:1px}
+  .navlinks{display:flex;gap:28px;font-size:13.5px}
+  .navlinks a{color:var(--ink-faint);text-decoration:none;transition:color .25s var(--ease)}
+  .navlinks a:hover{color:var(--ink)}
+  @media(max-width:640px){.navlinks{display:none}nav{padding:16px 22px}}
+
+  /* ---------- Hero ---------- */
+  .hero{
+    max-width:var(--maxw);margin:0 auto;
+    padding:190px 32px 130px;text-align:center;
+  }
+  .badge{
+    display:inline-block;
+    font-size:11.5px;letter-spacing:.18em;color:var(--ink-faint);
+    text-transform:uppercase;
+  }
+  h1{
+    margin:26px 0 20px;
+    font-size:clamp(34px,5.4vw,58px);
+    line-height:1.28;font-weight:300;letter-spacing:.005em;
+    color:var(--ink);
+  }
+  h1 em{font-style:normal;font-weight:400;border-bottom:2px solid var(--accent);padding-bottom:3px}
+  .lede{
+    max-width:560px;margin:0 auto;
+    font-size:15.5px;color:var(--ink-soft);line-height:1.95;
+  }
+
+  /* 中间的下载按钮：细黑框，hover 反过来 */
+  .cta{margin:56px 0 20px;display:flex;flex-direction:column;align-items:center;gap:18px}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:10px;
+    min-width:236px;padding:16px 32px;border-radius:2px;
+    border:1.4px solid var(--ink);
+    background:transparent;color:var(--ink);
+    font-size:15.5px;font-weight:400;text-decoration:none;letter-spacing:.04em;
+    transition:background .28s var(--ease),color .28s var(--ease);
+  }
+  .btn:hover{background:var(--ink);color:var(--paper)}
+  .btn:active{opacity:.82}
+  .btn svg{width:16px;height:16px}
+  .btn-sub{font-size:12.5px;color:var(--ink-faint);letter-spacing:.03em}
+  .btn-sub b{color:var(--ink-soft);font-weight:400}
+
+  /* ---------- 手绘分割线 ---------- */
+  .rule{max-width:var(--maxw);margin:0 auto;padding:0 32px;line-height:0}
+  .rule svg{width:100%;height:9px;fill:none;stroke:var(--rule);stroke-width:1.3;stroke-linecap:round}
+
+  /* ---------- 区块 ---------- */
+  section{max-width:var(--maxw);margin:0 auto;padding:0 32px}
+  section[id]{scroll-margin-top:88px}
+  .block{padding:120px 0}
+  @media(max-width:640px){
+    .hero{padding:150px 22px 96px}
+    section{padding:0 22px}
+    .rule{padding:0 22px}
+    .block{padding:88px 0}
+  }
+
+  .kicker{
+    font-size:11.5px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--accent);margin-bottom:14px;font-weight:400;
+  }
+  h2{
+    font-size:clamp(24px,3.2vw,32px);font-weight:300;
+    color:var(--ink);margin-bottom:14px;letter-spacing:.008em;
+  }
+  .sub{color:var(--ink-soft);max-width:600px;font-size:15px}
+
+  /* 功能卡：不要盒子，只用一条顶线 —— 像笔记本的分栏 */
+  .grid{
+    margin-top:56px;
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+    gap:38px 34px;
+  }
+  .card{
+    border-top:1px solid var(--rule);
+    padding-top:20px;
+    transition:border-color .3s var(--ease);
+  }
+  .card:hover{border-top-color:var(--accent)}
+  .card h3{
+    font-size:15.5px;font-weight:400;color:var(--ink);margin-bottom:8px;
+  }
+  .card p{font-size:14px;color:var(--ink-soft);line-height:1.8}
+  .num{
+    display:block;font-size:12px;letter-spacing:.14em;
+    color:var(--accent);margin-bottom:10px;font-weight:400;
+  }
+
+  /* 步骤：列表式，靠发丝线分隔 */
+  .steps{margin-top:48px}
+  .step{
+    display:flex;gap:22px;align-items:baseline;
+    padding:24px 0;border-bottom:1px solid var(--hair);
+    transition:border-color .3s var(--ease);
+  }
+  .step:first-child{border-top:1px solid var(--hair)}
+  .step:hover{border-bottom-color:var(--rule)}
+  .step .n{
+    flex:0 0 26px;font-size:13px;color:var(--accent);
+    font-weight:400;letter-spacing:.06em;
+  }
+  .step p{font-size:15px;color:var(--ink);font-weight:300}
+  .step p span{
+    display:block;margin-top:5px;
+    font-size:13.5px;color:var(--ink-faint);line-height:1.75;
+  }
+
+  /* 提醒：红笔画一道竖线，不做底色块 */
+  .note{
+    margin-top:44px;padding:4px 0 4px 20px;
+    border-left:2px solid var(--accent2);
+    font-size:14px;color:var(--ink-soft);line-height:1.85;max-width:640px;
+  }
+  .note b{color:var(--ink);font-weight:400}
+
+  /* ---------- 页脚 ---------- */
+  footer{
+    margin-top:40px;border-top:1px solid var(--hair);
+    padding:46px 32px;text-align:center;
+    color:var(--ink-faint);font-size:12.5px;line-height:2;
+  }
+  footer .dev{color:var(--ink);font-weight:400}
+
+  /* ---------- 动效：只有淡入 + 颜色过渡 ---------- */
+  .reveal{opacity:0;transform:translateY(12px)}
+  .reveal.in{opacity:1;transform:none;transition:opacity .6s var(--ease),transform .6s var(--ease)}
+  @media(prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+    .reveal{opacity:1;transform:none}
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+
+<header id="hdr">
+  <nav>
+    <div class="brand"><span class="dot"></span>双人协作做铺</div>
+    <div class="navlinks">
+      <a href="#features">功能</a>
+      <a href="#usage">怎么用</a>
+      <a href="#install">安装</a>
+      <a href="#faq">说明</a>
+    </div>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="badge reveal">冰与火之舞 · ADOFAI 模组 · v1.3.1</div>
+  <h1 class="reveal">两个人，<em>同一张谱</em><br>实时一起做铺</h1>
+  <p class="lede reveal">
+    你放一块砖，对面立刻看到；对面放一个事件，你这边同步出现。
+    方块、事件、装饰，连音频和图片素材都能自动搬过去。
+  </p>
+
+  <div class="cta reveal">
+    <a class="btn" id="dl" href="ADOFAICoopEditor-1.3.1.zip" download>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/>
+      </svg>
+      下载模组 v1.3.1
+    </a>
+    <div class="btn-sub">约 48 KB · 免费 · 开发者 <b>cehaby_KFY</b></div>
+  </div>
+</section>
+
+<div class="rule reveal" aria-hidden="true">
+  <svg viewBox="0 0 600 9" preserveAspectRatio="none">
+    <path d="M3 5.2 C 62 3.1, 120 6.6, 178 4.2 S 294 6.9, 352 4.4 S 468 6.7, 526 4.1 S 588 5.9, 597 4.6"/>
+  </svg>
+</div>
+
+<section id="features" class="block">
+  <div class="kicker reveal">Features</div>
+  <h2 class="reveal">该有的都有了</h2>
+  <p class="sub reveal">只同步差异，不整份传。改完 120 毫秒内到对面，谱再大也不卡。</p>
+
+  <div class="grid">
+    <div class="card reveal"><span class="num">01</span><h3>双向实时同步</h3><p>谁都能改，谁改谁发，没有主客之分。同一格同时改，后到的覆盖先到的。</p></div>
+    <div class="card reveal"><span class="num">02</span><h3>方块与事件</h3><p>放砖、改角度、删除，以及所有事件的放置/改参数/删除，全部同步。</p></div>
+    <div class="card reveal"><span class="num">03</span><h3>素材自动搬运</h3><p>音频、装饰图片、背景图缺失时自动向对端要并分片传过来，可一键开关。</p></div>
+    <div class="card reveal"><span class="num">04</span><h3>液态玻璃界面</h3><p>从屏幕左侧滑入的大面板，磨砂质感，全部控件带缓动动画。</p></div>
+    <div class="card reveal"><span class="num">05</span><h3>大到不卡</h3><p>只在真有改动时才编码发送。2000 事件谱面，每轮比对 1 毫秒。</p></div>
+    <div class="card reveal"><span class="num">06</span><h3>异地也能联</h3><p>房主用内网穿透映射端口，房员填穿透后的地址即可，TCP 直连。</p></div>
+  </div>
+</section>
+
+<div class="rule reveal" aria-hidden="true">
+  <svg viewBox="0 0 600 9" preserveAspectRatio="none">
+    <path d="M3 4.4 C 70 6.5, 128 3.2, 186 5.6 S 302 3.4, 360 5.8 S 476 3.1, 534 5.4 S 590 3.8, 597 5"/>
+  </svg>
+</div>
+
+<section id="usage" class="block">
+  <div class="kicker reveal">How to use</div>
+  <h2 class="reveal">三步开始</h2>
+  <p class="sub reveal">游戏里按 <b>]</b> 打开面板（按键可以自己改）。</p>
+
+  <div class="steps">
+    <div class="step reveal"><div class="n">01</div><p>房主：地址栏留空，点「开启」<span>面板上会给出 127.0.0.1 地址和局域网地址，把其中一行发给房员</span></p></div>
+    <div class="step reveal"><div class="n">02</div><p>房员：把地址填进「房主地址」，点「开启」<span>加入后会自动拉一次房主的谱面，双方立刻对齐</span></p></div>
+    <div class="step reveal"><div class="n">03</div><p>开始做铺<span>两边不同步时，点「推送我的谱面」或「拉取对方的谱面」一键对齐</span></p></div>
+  </div>
+
+  <div class="note reveal">
+    <b>异地联机：</b>房主用 cpolar / SakuraFrp / frp 把本机端口做一条 <b>TCP</b> 隧道，
+    房员填穿透后的「地址:端口」即可。注意要 TCP，不是 HTTP。
+  </div>
+</section>
+
+<div class="rule reveal" aria-hidden="true">
+  <svg viewBox="0 0 600 9" preserveAspectRatio="none">
+    <path d="M3 5.4 C 58 3.3, 116 6.8, 174 4.3 S 290 6.6, 348 4.5 S 464 6.4, 522 4.2 S 586 5.7, 597 4.8"/>
+  </svg>
+</div>
+
+<section id="install" class="block">
+  <div class="kicker reveal">Install</div>
+  <h2 class="reveal">安装</h2>
+  <p class="sub reveal">需要已装好 UnityModManager。</p>
+
+  <div class="steps">
+    <div class="step reveal"><div class="n">01</div><p>下载上面的压缩包并解压<span>得到 ADOFAICoopEditor 文件夹</span></p></div>
+    <div class="step reveal"><div class="n">02</div><p>整个文件夹放进游戏的 Mods 目录<span>macOS 在 Steam 的「A Dance of Fire and Ice/Mods」下</span></p></div>
+    <div class="step reveal"><div class="n">03</div><p>启动游戏，Ctrl+F10 打开 UMM 勾选模组<span>进关卡编辑器后按 ] 就能呼出面板</span></p></div>
+  </div>
+</section>
+
+<div class="rule reveal" aria-hidden="true">
+  <svg viewBox="0 0 600 9" preserveAspectRatio="none">
+    <path d="M3 4.6 C 66 6.7, 124 3.4, 182 5.7 S 298 3.2, 356 5.5 S 472 3.5, 530 5.6 S 588 4.2, 597 5.2"/>
+  </svg>
+</div>
+
+<section id="faq" class="block">
+  <div class="kicker reveal">Notes</div>
+  <h2 class="reveal">几点说明</h2>
+
+  <div class="grid">
+    <div class="card reveal"><span class="num">01</span><h3>两边关卡目录要不同</h3><p>素材写到各自关卡所在目录。测素材同步时请用两个不同的关卡文件夹。</p></div>
+    <div class="card reveal"><span class="num">02</span><h3>关卡要先保存过</h3><p>没保存的关卡在磁盘上不存在，素材没地方写。面板上有「保存关卡」按钮。</p></div>
+    <div class="card reveal"><span class="num">03</span><h3>相机设置不同步</h3><p>关卡设置/相机设置默认不动，避免互相覆盖（歌曲文件名除外）。</p></div>
+    <div class="card reveal"><span class="num">04</span><h3>换版本要重启游戏</h3><p>UMM 不会热加载 DLL，覆盖安装后必须重启生效。</p></div>
+  </div>
+</section>
+
+<footer>
+  <div>开发者 <span class="dev">cehaby_KFY</span> · 双人协作做铺 v1.3.1</div>
+  <div>A Dance of Fire and Ice 非官方模组 · 免费使用</div>
+</footer>
+
+<script>
+  /* ============================================================
+     下载地址：填了 DOWNLOAD_URL 就走外部直链，留空则用同目录下的 zip。
+     只改这一行，其它地方都不用动。例如：
+       https://github.com/cehaby/xxx/releases/download/v1.3.1/ADOFAICoopEditor-1.3.1.zip
+       https://cdn.jsdelivr.net/gh/cehaby/xxx@v1.3.1/ADOFAICoopEditor-1.3.1.zip
+     ============================================================ */
+  const DOWNLOAD_URL = "";
+
+  if (DOWNLOAD_URL){
+    const b = document.getElementById('dl');
+    if (b){ b.href = DOWNLOAD_URL; b.removeAttribute('download'); }
+  }
+
+  const hdr = document.getElementById('hdr');
+  const onScroll = () => hdr.classList.toggle('scrolled', window.scrollY > 10);
+  onScroll();
+  addEventListener('scroll', onScroll, {passive:true});
+
+  const items = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window){
+    const io = new IntersectionObserver((entries, obs)=>{
+      entries.forEach(e=>{
+        if(!e.isIntersecting) return;
+        e.target.classList.add('in');
+        obs.unobserve(e.target);
+      });
+    }, {threshold:0.1, rootMargin:'0px 0px -6% 0px'});
+    items.forEach(el=>io.observe(el));
+  } else {
+    items.forEach(el=>el.classList.add('in'));
+  }
+</script>
+</body>
+</html>
